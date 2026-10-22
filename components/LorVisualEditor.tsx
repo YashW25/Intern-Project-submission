@@ -70,7 +70,7 @@ export const LorVisualEditor: React.FC<LorVisualEditorProps> = ({
   const [currentLor, setCurrentLor] = useState<LorData>(lorData);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(lorData.blocks[0]?.id || null);
   const [letterheadImage, setLetterheadImage] = useState<string>(
-    lorData.letterheadBgUrl || getCompanyLetterheadSvgUrl()
+    lorData.letterheadBgUrl || '/certificate/innovara_letterhead_bg.png'
   );
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -224,7 +224,7 @@ export const LorVisualEditor: React.FC<LorVisualEditorProps> = ({
   };
 
   const resetDefaultLetterhead = () => {
-    const defaultBg = getCompanyLetterheadSvgUrl();
+    const defaultBg = '/certificate/innovara_letterhead_bg.png';
     setLetterheadImage(defaultBg);
     setCurrentLor((prev) => ({ ...prev, letterheadBgUrl: defaultBg }));
   };
@@ -280,7 +280,7 @@ export const LorVisualEditor: React.FC<LorVisualEditorProps> = ({
       const pdfHeight = pdf.internal.pageSize.getHeight();
 
       pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`LOR_${(activePreviewIntern?.name || currentLor.userName).replace(/\s+/g, '_')}_PeopleOS.pdf`);
+      pdf.save(`LOR_${(activePreviewIntern?.name || currentLor.userName).replace(/\s+/g, '_')}_Innovara_Dynamics.pdf`);
     } catch (err) {
       console.error('Failed to generate PDF:', err);
     } finally {
@@ -288,9 +288,18 @@ export const LorVisualEditor: React.FC<LorVisualEditorProps> = ({
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSavedSuccess(true);
     if (onSaveLor) onSaveLor(currentLor);
+    try {
+      await fetch('/api/lor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentLor),
+      });
+    } catch (e) {
+      console.warn('Failed to save LOR template:', e);
+    }
     setTimeout(() => setSavedSuccess(false), 2000);
   };
 

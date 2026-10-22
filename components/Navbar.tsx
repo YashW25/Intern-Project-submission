@@ -15,6 +15,8 @@ import {
   LogOut,
   Menu,
   X,
+  Users,
+  Sparkles,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -54,6 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'submit', label: 'Submit Project', icon: UploadCloud },
     { id: 'logbook', label: 'Download Logbook', icon: BookOpen },
     { id: 'lor', label: 'Download LOR', icon: Award },
+    { id: 'certificate', label: 'Certificate', icon: Sparkles },
     { id: 'notifications', label: 'Notifications', icon: Bell, badge: unreadNotificationsCount },
     { id: 'contact', label: 'Contact', icon: Mail },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -61,8 +64,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const adminNavs: NavItem[] = [
     { id: 'home', label: 'Overview', icon: Home },
+    { id: 'interns', label: 'Interns', icon: Users },
     { id: 'submissions', label: 'Submissions Review', icon: UploadCloud },
     { id: 'lor_builder', label: 'LOR Letterhead Studio', icon: Award },
+    { id: 'cert_studio', label: 'Certificate Studio', icon: Sparkles },
     { id: 'logbooks_review', label: 'Logbooks Signoff', icon: BookOpen },
     { id: 'contact_desk', label: 'Contact Desk', icon: Mail },
     { id: 'settings', label: 'Settings', icon: Settings },

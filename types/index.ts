@@ -107,3 +107,49 @@ export interface PortalNotification {
   read: boolean;
   createdAt: string;
 }
+
+export interface InternProfile {
+  id: string;
+  employeeCode: string;
+  name: string;
+  email: string;
+  phone?: string;
+  department: string;
+  internshipPeriod: string;
+  govIdLink?: string | null;
+  collegeIdLink?: string | null;
+  addressProofLink?: string | null;
+  resumeLink?: string | null;
+  signaturePath?: string | null;
+  documentVerificationStatus?: 'verified' | 'pending' | 'rejected' | null;
+  ndaSigned?: boolean;
+  ndaSignedAt?: string | null;
+  skills?: string[] | null;
+  emergencyContact?: string | null;
+  status: string;
+  avatarUrl?: string;
+  createdAt?: string;
+}
+
+export interface CertificateData {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail?: string;
+  department: string;
+  internshipPeriod: string;
+  certificateNumber: string;
+  theme: 'innovara_official' | 'executive_dark' | 'classic_gold' | 'cyber_emerald' | 'minimal_light';
+  blocks: TextBlockPosition[];
+  status: 'draft' | 'issued';
+  issuedAt?: string;
+  issuedBy?: string;
+  directorSignatureUrl?: string;
+  sealText?: string;
+  backgroundImageUrl?: string;
+  signatureSealBlockUrl?: string;
+  signatoryName?: string;
+  signatoryTitle?: string;
+  stampUrl?: string;
+}
+

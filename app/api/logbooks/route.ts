@@ -1,83 +1,67 @@
 import { NextResponse } from 'next/server';
-import { queryDb } from '@/lib/db';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     const role = searchParams.get('role');
+    const email = searchParams.get('email');
+    const name = searchParams.get('name');
 
-    let query: string;
-    let params: any[];
+    let data: any[] | null = null;
 
-    if (role === 'admin') {
-      // Admin sees all logbooks with user info
-      query = `
-        SELECT
-          l.id,
-          l.user_id,
-          u.full_name AS user_name,
-          u.email AS user_email,
-          l.date,
-          l.title,
-          l.description,
-          COALESCE(l.hours_spent::float, 0) AS hours_spent,
-          l.what_learned,
-          l.drive_link,
-          u.signature_path AS user_signature,
-          l.created_at,
-          l.updated_at
-        FROM logbooks l
-        LEFT JOIN users u ON u.id = l.user_id
-        ORDER BY l.date DESC
-        LIMIT 200
-      `;
-      params = [];
-    } else if (userId) {
-      // Intern sees only their own logbook entries
-      query = `
-        SELECT
-          l.id,
-          l.user_id,
-          u.full_name AS user_name,
-          u.email AS user_email,
-          l.date,
-          l.title,
-          l.description,
-          COALESCE(l.hours_spent::float, 0) AS hours_spent,
-          l.what_learned,
-          l.drive_link,
-          u.signature_path AS user_signature,
-          l.created_at,
-          l.updated_at
-        FROM logbooks l
-        LEFT JOIN users u ON u.id = l.user_id
-        WHERE l.user_id = $1
-        ORDER BY l.date DESC
-      `;
-      params = [userId];
+    let targetUserId = userId;
+    if (!targetUserId && (email || name)) {
+      const conds: string[] = [];
+      if (email) conds.push(`email.ilike.${email}`);
+      if (name) conds.push(`full_name.ilike.${name}`);
+      const { data: u } = await supabaseAdmin
+        .from('users')
+        .select('id')
+        .or(conds.join(','))
+        .limit(1)
+        .maybeSingle();
+      if (u) targetUserId = u.id;
+    }
+
+    if (targetUserId) {
+      // Fetch ALL original logbooks for this specific user in chronological order
+      const res = await supabaseAdmin
+        .from('logbooks')
+        .select('*, users(full_name, email, signature_path)')
+        .eq('user_id', targetUserId)
+        .order('date', { ascending: true });
+
+      data = res.data;
+    } else if (role === 'admin') {
+      // Admin global view: see all logbooks in database
+      const res = await supabaseAdmin
+        .from('logbooks')
+        .select('*, users(full_name, email, signature_path)')
+        .order('date', { ascending: true });
+
+      data = res.data;
     } else {
       return NextResponse.json({ logbooks: [] });
     }
 
-    const dbRes = await queryDb(query, params);
-
-    if (!dbRes) {
+    if (!data) {
       return NextResponse.json({ logbooks: [] });
     }
 
-    const formatted = dbRes.rows.map((row: any) => ({
+    const formatted = data.map((row: any) => ({
       id: row.id,
       userId: row.user_id,
-      userName: row.user_name || 'Unknown',
-      userEmail: row.user_email || '',
+      userName: row.users?.full_name || row.user_name || name || 'Intern',
+      userEmail: row.users?.email || row.user_email || email || '',
       date: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
-      title: row.title || 'Untitled Entry',
+      title: row.title || 'Logbook Entry',
       description: row.description || '',
       hoursSpent: parseFloat(row.hours_spent) || 0,
       whatLearned: row.what_learned || '',
       driveLink: row.drive_link || '',
-      userSignature: row.user_signature || null,
+      userSignature: row.users?.signature_path || row.user_signature || null,
       createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
       updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
     }));
@@ -101,29 +85,43 @@ export async function POST(request: Request) {
     const newId = `log_${Date.now()}`;
     const entryDate = date || new Date().toISOString().split('T')[0];
 
-    await queryDb(
-      `INSERT INTO logbooks (id, user_id, date, title, description, hours_spent, what_learned, drive_link, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
-      [newId, userId, entryDate, title, description || '', hoursSpent || 0, whatLearned || '', driveLink || '']
-    );
+    const { data, error } = await supabaseAdmin
+      .from('logbooks')
+      .insert({
+        id: newId,
+        user_id: userId,
+        date: entryDate,
+        title,
+        description: description || '',
+        hours_spent: hoursSpent || 0,
+        what_learned: whatLearned || '',
+        drive_link: driveLink || '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Logbook insert error:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,
       logbook: {
-        id: newId,
-        userId,
-        date: entryDate,
-        title,
-        description: description || '',
-        hoursSpent: hoursSpent || 0,
-        whatLearned: whatLearned || '',
-        driveLink: driveLink || '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        id: data.id,
+        userId: data.user_id,
+        date: data.date,
+        title: data.title,
+        description: data.description || '',
+        hoursSpent: data.hours_spent || 0,
+        whatLearned: data.what_learned || '',
+        driveLink: data.drive_link || '',
       },
     });
   } catch (error: any) {
-    console.error('Logbook POST error:', error);
+    console.error('Logbooks API POST error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

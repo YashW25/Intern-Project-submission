@@ -1,13 +1,17 @@
 import { NextResponse } from 'next/server';
-import { queryDb, initializeDatabaseTables } from '@/lib/db';
+import { supabaseAdmin } from '@/lib/supabase';
 
 let memoryMessages: any[] = [];
 
 export async function GET() {
   try {
-    const dbRes = await queryDb('SELECT * FROM contact_messages ORDER BY created_at DESC');
-    if (dbRes && dbRes.rows.length > 0) {
-      const formatted = dbRes.rows.map((r: any) => ({
+    const { data: dbRows } = await supabaseAdmin
+      .from('contact_messages')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (dbRows && dbRows.length > 0) {
+      const formatted = dbRows.map((r: any) => ({
         id: r.id,
         userId: r.user_id,
         userName: r.user_name,
@@ -21,7 +25,7 @@ export async function GET() {
       return NextResponse.json({ messages: formatted });
     }
   } catch (e) {
-    console.warn('DB fetch messages error:', e);
+    console.warn('DB fetch messages warning:', e);
   }
   return NextResponse.json({ messages: memoryMessages });
 }
@@ -34,35 +38,53 @@ export async function POST(request: Request) {
       userId: body.userId || 'usr_intern',
       userName: body.userName || 'Intern',
       userEmail: body.userEmail || 'intern@company.com',
-      subject: body.subject,
-      message: body.message,
+      subject: body.subject || 'Inquiry',
+      message: body.message || '',
       status: 'unread' as const,
       createdAt: new Date().toISOString(),
     };
     memoryMessages.unshift(newMsg as any);
 
     try {
-      await initializeDatabaseTables();
-      await queryDb(
-        `INSERT INTO contact_messages (id, user_id, user_name, user_email, subject, message, status, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          newMsg.id,
-          newMsg.userId,
-          newMsg.userName,
-          newMsg.userEmail,
-          newMsg.subject,
-          newMsg.message,
-          newMsg.status,
-          newMsg.createdAt,
-        ]
-      );
+      await supabaseAdmin.from('contact_messages').insert({
+        id: newMsg.id,
+        user_id: newMsg.userId,
+        user_name: newMsg.userName,
+        user_email: newMsg.userEmail,
+        subject: newMsg.subject,
+        message: newMsg.message,
+        status: newMsg.status,
+        created_at: newMsg.createdAt,
+      });
     } catch (dbErr) {
-      console.warn('DB insert contact message error:', dbErr);
+      console.warn('DB insert contact message warning:', dbErr);
     }
 
     return NextResponse.json({ success: true, message: newMsg });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, reply } = body;
+    if (!id) {
+      return NextResponse.json({ error: 'Message ID is required' }, { status: 400 });
+    }
+
+    await supabaseAdmin
+      .from('contact_messages')
+      .update({ reply, status: 'replied' })
+      .eq('id', id);
+
+    memoryMessages = memoryMessages.map((m) =>
+      m.id === id ? { ...m, reply, status: 'replied' } : m
+    );
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

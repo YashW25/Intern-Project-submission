@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
-import jsPDF from 'jspdf';
+import React, { useState, useEffect } from 'react';
 import { LogbookEntry } from '@/types';
+import { downloadLogbookPdf as downloadOfficialLogbookPdf } from '@/lib/document-generator';
 import {
   BookOpen,
   Calendar,
@@ -36,46 +36,7 @@ function formatHours(h: number) {
   return `${h.toFixed(1)} hrs`;
 }
 
-interface ImageInfo {
-  dataUrl: string;
-  width: number;
-  height: number;
-  aspectRatio: number;
-}
 
-async function getImageInfo(url: string): Promise<ImageInfo | null> {
-  return new Promise((resolve) => {
-    if (!url) return resolve(null);
-
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        const w = img.naturalWidth || img.width || 100;
-        const h = img.naturalHeight || img.height || 50;
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (ctx && w > 0 && h > 0) {
-          ctx.drawImage(img, 0, 0);
-          resolve({
-            dataUrl: canvas.toDataURL('image/png'),
-            width: w,
-            height: h,
-            aspectRatio: w / h,
-          });
-        } else {
-          resolve(null);
-        }
-      } catch (e) {
-        resolve(null);
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
-}
 
 export const LogbookView: React.FC<LogbookViewProps> = ({
   logbooks: initialLogbooks,
@@ -85,10 +46,17 @@ export const LogbookView: React.FC<LogbookViewProps> = ({
   role = 'intern',
   onUpdateLogbook,
 }) => {
-  const [logbooks] = useState<LogbookEntry[]>(initialLogbooks);
-  const [activeId, setActiveId] = useState<string>(initialLogbooks[0]?.id || '');
+  const logbooks = initialLogbooks || [];
+  const [activeId, setActiveId] = useState<string>('');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [search, setSearch] = useState('');
+
+  // Keep active entry synchronized whenever logbooks update
+  useEffect(() => {
+    if ((!activeId || !logbooks.some((l) => l.id === activeId)) && logbooks.length > 0) {
+      setActiveId(logbooks[0].id);
+    }
+  }, [logbooks, activeId]);
 
   const activeEntry = logbooks.find((l) => l.id === activeId) || logbooks[0] || null;
 
@@ -112,325 +80,14 @@ export const LogbookView: React.FC<LogbookViewProps> = ({
     setIsGeneratingPdf(true);
 
     try {
-      await new Promise((r) => setTimeout(r, 10));
-
-      const [directorSigImg, userSigImg] = await Promise.all([
-        getImageInfo('/output-smallpngtools.png'),
-        userSignatureUrl ? getImageInfo(userSignatureUrl) : Promise.resolve(null),
-      ]);
-
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidth = 210;
-      const contentWidth = 182;
-
-      let currentPage = 1;
-
-      // Helper function to render Header on every page
-      const renderHeader = () => {
-        pdf.setFillColor(15, 23, 42); // Slate 950
-        pdf.rect(0, 0, pageWidth, 22, 'F');
-
-        // Cyan accent line
-        pdf.setFillColor(6, 182, 212); // Cyan 500
-        pdf.rect(0, 22, pageWidth, 1.2, 'F');
-
-        // 'P' Badge icon
-        pdf.setFillColor(99, 102, 241); // Indigo 500
-        pdf.roundedRect(14, 4, 11, 11, 2, 2, 'F');
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(14);
-        pdf.setTextColor(255, 255, 255);
-        pdf.text('P', 19.5, 12, { align: 'center' });
-
-        // Header Title & Tagline
-        pdf.setFontSize(10);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(255, 255, 255);
-        pdf.text('PEOPLE OS TECHNOLOGIES', 28, 9);
-
-        pdf.setFontSize(6.5);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(103, 232, 249); // Cyan 300
-        pdf.text('EMPOWERING NEXT-GENERATION SOFTWARE ENGINEERING', 28, 14.5);
-
-        // Header Right Meta
-        pdf.setFontSize(7.5);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(255, 255, 255);
-        pdf.text('OFFICIAL DOCUMENT', 196, 8, { align: 'right' });
-
-        pdf.setFontSize(6.5);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(199, 210, 254);
-        pdf.text('internships@peopleos.tech', 196, 12.5, { align: 'right' });
-        pdf.text('www.peopleos.tech', 196, 16.5, { align: 'right' });
+      const internData: any = {
+        id: '',
+        name: userName || 'Intern',
+        department: department || 'Web Development',
+        internshipPeriod: internshipPeriod || '1st July 2026 to 15th September 2026',
+        employeeCode: 'INT001',
       };
-
-      // Helper function to render Footer on every page
-      const renderFooter = (page: number, totalPages: number) => {
-        pdf.setPage(page);
-        pdf.setFillColor(6, 182, 212);
-        pdf.rect(14, 283, contentWidth, 0.5, 'F');
-
-        pdf.setFontSize(6.5);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(100, 116, 139);
-        pdf.text('Innovation Park, Building 4, Tech Corridor, SF 94107 | internships@peopleos.tech', 14, 287);
-
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(99, 102, 241);
-        pdf.text(`VERIFIED CERTIFICATE PORTAL  |  Page ${page} of ${totalPages}`, 196, 287, { align: 'right' });
-      };
-
-      // Helper to draw Table Header
-      const renderTableHeader = (y: number) => {
-        pdf.setFillColor(15, 23, 42); // Dark slate
-        pdf.rect(14, y, contentWidth, 8, 'F');
-
-        pdf.setFontSize(7.5);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(255, 255, 255);
-
-        pdf.text('DATE', 16, y + 5.5);
-        pdf.text('TITLE & WORK DONE', 38, y + 5.5);
-        pdf.text('KEY LEARNINGS', 128, y + 5.5);
-        pdf.text('HOURS', 188, y + 5.5, { align: 'center' });
-
-        return y + 8;
-      };
-
-      // Start Page 1
-      renderHeader();
-
-      // First Page Title & Info Box
-      pdf.setFontSize(13);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(15, 23, 42);
-      pdf.text('INTERNSHIP OFFICIAL LOGBOOK', 105, 31, { align: 'center' });
-
-      pdf.setFontSize(7);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(100, 116, 139);
-      pdf.text('PEOPLEOS TECHNOLOGIES • VERIFIED ENGINEERING RECORD', 105, 35, { align: 'center' });
-
-      // Intern Info Card
-      pdf.setFillColor(248, 250, 252);
-      pdf.setDrawColor(226, 232, 240);
-      pdf.roundedRect(14, 38, contentWidth, 16, 2, 2, 'FD');
-
-      pdf.setFontSize(7.5);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(71, 85, 105);
-
-      pdf.text('Intern Name:', 18, 43.5);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(userName || '—', 36, 43.5);
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(71, 85, 105);
-      pdf.text('Department:', 105, 43.5);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(department || '—', 123, 43.5);
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(71, 85, 105);
-      pdf.text('Internship Period:', 18, 49.5);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(internshipPeriod || '—', 43, 49.5);
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(71, 85, 105);
-      pdf.text('Total Entries:', 105, 49.5);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(`${logbooks.length} days • ${totalHours.toFixed(1)} hrs`, 123, 49.5);
-
-      let currentY = renderTableHeader(58);
-
-      // Render rows
-      for (let i = 0; i < logbooks.length; i++) {
-        const entry = logbooks[i];
-        const titleText = entry.title || 'Untitled Entry';
-        const descText = entry.description || '';
-        const learnText = entry.whatLearned || '—';
-        const dateStr = formatDate(entry.date);
-        const hoursStr = entry.hoursSpent > 0 ? `${entry.hoursSpent.toFixed(1)}h` : '—';
-
-        // Split text to fit columns
-        pdf.setFontSize(7.5);
-        pdf.setFont('helvetica', 'bold');
-        const titleLines = pdf.splitTextToSize(titleText, 86);
-
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(7);
-        const descLines = pdf.splitTextToSize(descText, 86);
-        const learnLines = pdf.splitTextToSize(learnText, 50);
-
-        const titleDescHeight = titleLines.length * 3.5 + descLines.length * 3 + 4;
-        const learnHeight = learnLines.length * 3 + 4;
-        const rowHeight = Math.max(9, Math.max(titleDescHeight, learnHeight));
-
-        // Check page overflow limit
-        if (currentY + rowHeight > 250) {
-          pdf.addPage();
-          currentPage++;
-          renderHeader();
-
-          // Sub-header for page > 1
-          pdf.setFontSize(8);
-          pdf.setFont('helvetica', 'bold');
-          pdf.setTextColor(15, 23, 42);
-          pdf.text('INTERNSHIP OFFICIAL LOGBOOK', 14, 28);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setTextColor(100, 116, 139);
-          pdf.text(`|   ${userName}`, 68, 28);
-
-          pdf.setDrawColor(226, 232, 240);
-          pdf.line(14, 30.5, 196, 30.5);
-
-          currentY = renderTableHeader(33);
-        }
-
-        // Row background fill (alternating)
-        if (i % 2 === 1) {
-          pdf.setFillColor(248, 250, 252);
-          pdf.rect(14, currentY, contentWidth, rowHeight, 'F');
-        }
-
-        // Row borders
-        pdf.setDrawColor(226, 232, 240);
-        pdf.rect(14, currentY, contentWidth, rowHeight, 'S');
-        pdf.line(36, currentY, 36, currentY + rowHeight);
-        pdf.line(126, currentY, 126, currentY + rowHeight);
-        pdf.line(180, currentY, 180, currentY + rowHeight);
-
-        // Cell contents
-        // Date
-        pdf.setFont('courier', 'normal');
-        pdf.setFontSize(6.5);
-        pdf.setTextColor(51, 65, 85);
-        pdf.text(dateStr, 16, currentY + 4.5);
-
-        // Title & Description
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(7.5);
-        pdf.setTextColor(15, 23, 42);
-        let textY = currentY + 4;
-        pdf.text(titleLines, 38, textY);
-        textY += titleLines.length * 3.5;
-
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(6.5);
-        pdf.setTextColor(71, 85, 105);
-        pdf.text(descLines, 38, textY);
-
-        // Key Learnings
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(6.5);
-        pdf.setTextColor(71, 85, 105);
-        pdf.text(learnLines, 128, currentY + 4);
-
-        // Hours
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(7.5);
-        pdf.setTextColor(4, 120, 87); // Emerald 700
-        pdf.text(hoursStr, 188, currentY + 5, { align: 'center' });
-
-        currentY += rowHeight;
-      }
-
-      // Check space for Signatures block
-      const sigHeight = 28;
-      if (currentY + sigHeight > 270) {
-        pdf.addPage();
-        currentPage++;
-        renderHeader();
-        currentY = 32;
-      } else {
-        currentY += 6;
-      }
-
-      // Render Signatures
-      pdf.setDrawColor(226, 232, 240);
-      pdf.line(14, currentY, 196, currentY);
-      currentY += 4;
-
-      // Intern Signature (Left)
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(30, 41, 59);
-      pdf.text('Intern Signature', 14, currentY);
-
-      let sigOffset = 14;
-      if (userSigImg) {
-        const maxH = 11;
-        const maxW = 45;
-        let sigH = maxH;
-        let sigW = sigH * userSigImg.aspectRatio;
-        if (sigW > maxW) {
-          sigW = maxW;
-          sigH = sigW / userSigImg.aspectRatio;
-        }
-        pdf.addImage(userSigImg.dataUrl, 'PNG', 14, currentY + 1.5, sigW, sigH);
-        sigOffset = Math.max(14, 1.5 + sigH + 3);
-      } else {
-        pdf.setFont('times', 'bolditalic');
-        pdf.setFontSize(10);
-        pdf.setTextColor(15, 23, 42);
-        pdf.text(userName || 'Intern', 14, currentY + 7);
-        sigOffset = 14;
-      }
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(userName || 'Intern', 14, currentY + sigOffset);
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(6.5);
-      pdf.setTextColor(100, 116, 139);
-      pdf.text(`Date: ${new Date().toLocaleDateString('en-IN')}`, 14, currentY + sigOffset + 3.5);
-
-      // Program Director Signature (Right)
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(30, 41, 59);
-      pdf.text('Program Director Signoff', 196, currentY, { align: 'right' });
-
-      let dirSigOffset = 14;
-      if (directorSigImg) {
-        const maxH = 11;
-        const maxW = 45;
-        let sigH = maxH;
-        let sigW = sigH * directorSigImg.aspectRatio;
-        if (sigW > maxW) {
-          sigW = maxW;
-          sigH = sigW / directorSigImg.aspectRatio;
-        }
-        const posX = 196 - sigW;
-        pdf.addImage(directorSigImg.dataUrl, 'PNG', posX, currentY + 1.5, sigW, sigH);
-        dirSigOffset = Math.max(14, 1.5 + sigH + 3);
-      }
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text('Manthan Kshirsagar', 196, currentY + dirSigOffset, { align: 'right' });
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(6.5);
-      pdf.setTextColor(100, 116, 139);
-      pdf.text('Project Manager • Head of Engineering & Relations', 196, currentY + dirSigOffset + 3.5, { align: 'right' });
-
-      // Apply footers to all pages
-      for (let p = 1; p <= currentPage; p++) {
-        renderFooter(p, currentPage);
-      }
-
-      pdf.save(`Logbook_${(userName || 'Intern').replace(/\s+/g, '_')}.pdf`);
+      await downloadOfficialLogbookPdf(internData, logbooks);
     } catch (err) {
       console.error('Logbook PDF error:', err);
     } finally {
